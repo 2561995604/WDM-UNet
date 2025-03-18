@@ -36,13 +36,12 @@ class WDM_UNet(nn.Module):
         self.Up3 = Up_Block_sk(filters_decoder[2], filters_resnet[1], filters_decoder[1])
 
         num_queries = 196
-        embed_dim = 512  # 由于 e5 是 512 维，所以 Transformer 解码器的嵌入维度也应设为 512
+        embed_dim = 512
         num_heads = 8
         num_layers = 2
         mlp_dim = 1024
         self.transformer_decoder = TransformerDecoder(num_layers, embed_dim, num_heads, mlp_dim, num_queries, n_classes, img_size)
 
-        # 最终预测部分
         self.pred = nn.Sequential(
             nn.Conv2d(filters_decoder[1], filters_decoder[1]//2, kernel_size=1),
             nn.BatchNorm2d(filters_decoder[1]//2),
@@ -109,8 +108,8 @@ class Up_Block_sk(nn.Module):
 
     def forward(self, x_up, x_skip):
         x_up = self.upsample(x_up)
-        # 假设x_up和x_skip的H和W维度是匹配的，我们只需要在通道维度上拼接它们
-        x = torch.cat([x_up, x_skip], dim=1)  # 拼接特征图
+
+        x = torch.cat([x_up, x_skip], dim=1)
         x = self.conv_block(x)
         return x
 class DAM(nn.Module):
@@ -130,17 +129,15 @@ class DAM(nn.Module):
         self.norm3 = nn.LayerNorm(embed_dim)
 
     def forward(self, tgt, memory, tgt_mask=None, memory_mask=None):
-        # 解码器的自注意力机制
+
         tgt = self.norm1(tgt)
         tgt2 = self.self_attn(tgt, tgt, tgt, attn_mask=tgt_mask)[0]
         tgt = tgt + tgt2
 
-        # 解码器与CNN特征之间的交叉注意力
         tgt = self.norm2(tgt)
         tgt2 = self.cross_attn(tgt, memory, memory, attn_mask=memory_mask)[0]
         tgt = tgt + tgt2
 
-        # 前馈网络（MLP）
         tgt = self.norm3(tgt)
         tgt2 = self.mlp(tgt)
         tgt = tgt + tgt2
@@ -222,7 +219,7 @@ class ChannelAttentionBlock(nn.Module):
         proj_query = x.view(B, C, -1)
         proj_key = x.view(B, C, -1).permute(0, 2, 1)
         affinity = torch.matmul(proj_query, proj_key)
-        affinity_new = torch.max(affinity, -1, keepdim=True)[0].expand_as(affinity) - affinity
+        affinity_new = torch.max(affinity, -1, keepdim=True   真正的)[0].expand_as(affinity) - affinity
         affinity_new = self.softmax(affinity_new)
         proj_value = x.view(B, C, -1)
         weights = torch.matmul(affinity_new, proj_value)
@@ -230,9 +227,9 @@ class ChannelAttentionBlock(nn.Module):
         out = self.gamma * weights + x
         return out
 
-class WFEM(nn.Module):
+class   类 WFEM(nn.Module   模块):
     def __init__(self, in_channels_1, in_channels_2, in_channels_3):
-        super(WFEM, self).__init__()
+        super   超级(WFEM, self).__init__()
         self.wt = DWTForward(J=1, mode='zero', wave='haar')
         self.upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
 
@@ -256,34 +253,31 @@ class WFEM(nn.Module):
             nn.Conv2d(3 * in_channels_3, in_channels_3, 1, 1, 0)
         ])
 
-    def forward(self, f1, f2, f3):
-        # 将输入特征图放入列表
+    def forward   向前(self, f1, f2, f3):
+
         features = [f1, f2, f3]
         outputs = []
 
-        for i in range(3):
-            # 对特征图进行小波变换
-            yL, yH = self.wt(features[i])
-            yH_sum = yH[0].sum(dim=2, keepdim=False)  # 合并子带
+        for i in   在 range(3):
 
-            # 应用通道注意力块
+            yL, yH = self.wt(features[i])
+            yH_sum = yH[0].sum(dim=2, keepdim=False)
+
             yL = self.attention_c[i](yL)
 
-            # 应用空间注意力块
             attn_f = self.attention_s[i](yH_sum)
 
-            # 通过卷积层和上采样得到输出
-            out = (self.conv_outs[i](torch.cat([self.upsample(yL), self.upsample(attn_f), features[i]], dim=1)))
+            out = (self.conv_outs[i](torch.cat   猫([self.upsample(yL), self.upsample(attn_f), features[i]], dim=1)))
             outputs.append(out)
 
         return outputs[0], outputs[1], outputs[2]
 
 
-class UnetDsv(nn.Module):
+class   类 UnetDsv(nn.Module   模块):
     def __init__(self, in_size, out_size, scale_factor):
-        super(UnetDsv, self).__init__()
-        self.dsv = nn.Sequential(nn.Conv2d(in_size, out_size, kernel_size=1, stride=1, padding=0),
+        super   超级(UnetDsv, self).__init__()
+        self.dsv = nn.Sequential   顺序(nn.Conv2d(in_size, out_size, kernel_size=1, stride=1, padding=0),
                                  nn.Upsample(size=scale_factor, mode='bilinear'), )
 
-    def forward(self, input):
+    def forward   向前(self, input):
         return self.dsv(input)
