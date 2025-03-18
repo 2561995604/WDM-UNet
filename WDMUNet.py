@@ -219,7 +219,7 @@ class ChannelAttentionBlock(nn.Module):
         proj_query = x.view(B, C, -1)
         proj_key = x.view(B, C, -1).permute(0, 2, 1)
         affinity = torch.matmul(proj_query, proj_key)
-        affinity_new = torch.max(affinity, -1, keepdim=True   真正的)[0].expand_as(affinity) - affinity
+        affinity_new = torch.max(affinity, -1, keepdim=True)[0].expand_as(affinity) - affinity
         affinity_new = self.softmax(affinity_new)
         proj_value = x.view(B, C, -1)
         weights = torch.matmul(affinity_new, proj_value)
@@ -227,9 +227,9 @@ class ChannelAttentionBlock(nn.Module):
         out = self.gamma * weights + x
         return out
 
-class   类 WFEM(nn.Module   模块):
-    def __init__(self, in_channels_1, in_channels_2, in_channels_3):
-        super   超级(WFEM, self).__init__()
+class WFEM(nn.Module):
+    def __init__(self, in_channels_1, in_channels_2, in_channels_3):__init__(self, in_channels_1, in_channels_2, in_channels_3)：
+        super(WFEM, self).__init__()
         self.wt = DWTForward(J=1, mode='zero', wave='haar')
         self.upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
 
@@ -253,12 +253,12 @@ class   类 WFEM(nn.Module   模块):
             nn.Conv2d(3 * in_channels_3, in_channels_3, 1, 1, 0)
         ])
 
-    def forward   向前(self, f1, f2, f3):
+    def forward(self, f1, f2, f3):
 
         features = [f1, f2, f3]
         outputs = []
 
-        for i in   在 range(3):
+        for i in range(3):
 
             yL, yH = self.wt(features[i])
             yH_sum = yH[0].sum(dim=2, keepdim=False)
@@ -267,17 +267,17 @@ class   类 WFEM(nn.Module   模块):
 
             attn_f = self.attention_s[i](yH_sum)
 
-            out = (self.conv_outs[i](torch.cat   猫([self.upsample(yL), self.upsample(attn_f), features[i]], dim=1)))
+            out = (self.conv_outs[i](torch.cat([self.upsample(yL), self.upsample(attn_f), features[i]], dim=1)))
             outputs.append(out)
 
         return outputs[0], outputs[1], outputs[2]
 
 
-class   类 UnetDsv(nn.Module   模块):
+class UnetDsv(nn.Module):
     def __init__(self, in_size, out_size, scale_factor):
-        super   超级(UnetDsv, self).__init__()
-        self.dsv = nn.Sequential   顺序(nn.Conv2d(in_size, out_size, kernel_size=1, stride=1, padding=0),
+        super(UnetDsv, self).__init__()
+        self.dsv = nn.Sequential(nn.Conv2d(in_size, out_size, kernel_size=1, stride=1, padding=0),
                                  nn.Upsample(size=scale_factor, mode='bilinear'), )
 
-    def forward   向前(self, input):
+    def forward(self, input):
         return self.dsv(input)
