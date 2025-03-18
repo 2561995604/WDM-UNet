@@ -168,7 +168,7 @@ class TransformerDecoder(nn.Module):
 
         return logits
 
-#     通道注意力块与空间注意力块来自于DANet
+
 class SpatialAttentionBlock(nn.Module):
     def __init__(self, in_channels):
         super(SpatialAttentionBlock, self).__init__()
@@ -228,12 +228,12 @@ class ChannelAttentionBlock(nn.Module):
         return out
 
 class WFEM(nn.Module):
-    def __init__(self, in_channels_1, in_channels_2, in_channels_3):__init__(self, in_channels_1, in_channels_2, in_channels_3)：
+    def __init__(self, in_channels_1, in_channels_2, in_channels_3):
         super(WFEM, self).__init__()
         self.wt = DWTForward(J=1, mode='zero', wave='haar')
         self.upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
 
-        # 将通道数和注意力模块放入列表
+
         self.attention_s = nn.ModuleList([
             SpatialAttentionBlock(in_channels_1),
             SpatialAttentionBlock(in_channels_2),
