@@ -6,95 +6,6 @@ from pytorch_wavelets import DWTForward
 from torchvision.models import ResNet34_Weights
 
 
-class WDM_UNet(nn.Module):
-    def __init__(self, n_channels=3, n_classes=1, img_size=224):
-        super().__init__()
-        self.n_classes = n_classes
-        resnet = models.resnet34(weights=ResNet34_Weights.IMAGENET1K_V1)
-        filters_resnet = [64, 64, 128, 256, 512]
-        filters_decoder = [32, 64, 128, 256, 512]
-
-        self.bridge = WFEM(64, 128, 256)
-
-        self.Conv1 = nn.Sequential(
-            nn.Conv2d(n_channels, filters_resnet[0], kernel_size=3, stride=1, padding=1, bias=True),
-            nn.BatchNorm2d(filters_resnet[0]),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(filters_resnet[0], filters_resnet[0], kernel_size=3, stride=1, padding=1, bias=True),
-            nn.BatchNorm2d(filters_resnet[0]),
-            nn.ReLU(inplace=True)
-        )
-        self.Maxpool = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.upsample = nn.ConvTranspose2d(64, 64, kernel_size=2, stride=2)
-        self.Conv2 = resnet.layer1
-        self.Conv3 = resnet.layer2
-        self.Conv4 = resnet.layer3
-        self.Conv5 = resnet.layer4
-
-        self.Up5 = Up_Block_sk(filters_resnet[4],  filters_resnet[3], filters_decoder[3])
-        self.Up4 = Up_Block_sk(filters_decoder[3], filters_resnet[2], filters_decoder[2])
-        self.Up3 = Up_Block_sk(filters_decoder[2], filters_resnet[1], filters_decoder[1])
-
-        num_queries = 196
-        embed_dim = 512
-        num_heads = 8
-        num_layers = 2
-        mlp_dim = 1024
-        self.transformer_decoder = TransformerDecoder(num_layers, embed_dim, num_heads, mlp_dim, num_queries, n_classes, img_size)
-
-        self.pred = nn.Sequential(
-            nn.Conv2d(filters_decoder[1], filters_decoder[1]//2, kernel_size=1),
-            nn.BatchNorm2d(filters_decoder[1]//2),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(filters_decoder[1]//2, n_classes, kernel_size=1),
-        )
-        self.last_activation = nn.Sigmoid()
-
-        # Deep supervision
-        filters = [64, 128, 256]
-        self.out_size = (224, 224)
-        self.dsv4 = UnetDsv(in_size=filters[2], out_size=64, scale_factor=self.out_size)
-        self.dsv3 = UnetDsv(in_size=filters[1], out_size=64, scale_factor=self.out_size)
-        self.dsv2 = UnetDsv(in_size=filters[0], out_size=64, scale_factor=self.out_size)
-
-        self.conv1 = nn.Conv2d(192, 64, kernel_size=1, stride=1, padding=0)
-        self.c4 = nn.Conv2d(n_classes, 256, kernel_size=1, stride=1, padding=0)
-        self.c3 = nn.Conv2d(n_classes, 128, kernel_size=1, stride=1, padding=0)
-        self.c2 = nn.Conv2d(n_classes, 64, kernel_size=1, stride=1, padding=0)
-
-    def forward(self, x):
-        # 编码器
-        e1 = self.Conv1(x)
-        e1_maxp = self.Maxpool(e1)  # 64
-        e2 = self.Conv2(e1_maxp)  # 64
-        e3 = self.Conv3(e2)  # 128
-        e4 = self.Conv4(e3)  # 256
-        e5 = self.Conv5(e4)  # 512
-
-        c2, c3, c4 = self.bridge(e2, e3, e4)
-
-        transformer_output = self.transformer_decoder(e5)  # [batch_size, n_classes, 14, 14]
-
-        dt4 = self.c4(F.interpolate(transformer_output, size=(28, 28), mode='bilinear',
-                                                     align_corners=False))
-        dt3 = self.c3(F.interpolate(transformer_output, size=(56, 56), mode='bilinear',
-                                                     align_corners=False))
-        dt2 = self.c2(F.interpolate(transformer_output, size=(112, 112), mode='bilinear',
-                                                     align_corners=False))
-        d4 = self.Up5(e5, c4) + dt4  # 256
-        d3 = self.Up4(d4, c3) + dt3  # 128
-        d2 = self.Up3(d3, c2) + dt2  # 64
-
-        dsv4 = self.dsv4(d4)
-        dsv3 = self.dsv3(d3)
-        dsv2 = self.dsv2(d2)
-
-        x_fin = self.conv1(torch.cat([dsv4, dsv3, dsv2], dim=1))
-        if self.n_classes == 1:
-            out = self.last_activation(self.pred(x_fin))
-        else:
-            out = self.pred(x_fin)
-        return out
 class Up_Block_sk(nn.Module):
     def __init__(self, in_channels_up, in_channels_skip, out_channels):
         super(Up_Block_sk, self).__init__()
@@ -281,3 +192,127 @@ class UnetDsv(nn.Module):
 
     def forward(self, input):
         return self.dsv(input)
+
+
+class WDM_UNet(nn.Module):
+    def __init__(self, n_channels=3, n_classes=1, img_size=224):
+        super().__init__()
+        self.n_classes = n_classes
+        resnet = models.resnet34(weights=ResNet34_Weights.IMAGENET1K_V1)
+        filters_resnet = [64, 64, 128, 256, 512]
+        filters_decoder = [32, 64, 128, 256, 512]
+
+        self.bridge = WFEM(64, 128, 256)
+
+        self.Conv1 = nn.Sequential(
+            nn.Conv2d(n_channels, filters_resnet[0], kernel_size=3, stride=1, padding=1, bias=True),
+            nn.BatchNorm2d(filters_resnet[0]),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(filters_resnet[0], filters_resnet[0], kernel_size=3, stride=1, padding=1, bias=True),
+            nn.BatchNorm2d(filters_resnet[0]),
+            nn.ReLU(inplace=True)
+        )
+        self.Maxpool = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.upsample = nn.ConvTranspose2d(64, 64, kernel_size=2, stride=2)
+        self.Conv2 = resnet.layer1
+        self.Conv3 = resnet.layer2
+        self.Conv4 = resnet.layer3
+        self.Conv5 = resnet.layer4
+
+        self.Up5 = Up_Block_sk(filters_resnet[4],  filters_resnet[3], filters_decoder[3])
+        self.Up4 = Up_Block_sk(filters_decoder[3], filters_resnet[2], filters_decoder[2])
+        self.Up3 = Up_Block_sk(filters_decoder[2], filters_resnet[1], filters_decoder[1])
+
+        num_queries = 196
+        embed_dim = 512
+        num_heads = 8
+        num_layers = 2
+        mlp_dim = 1024
+        self.transformer_decoder = TransformerDecoder(num_layers, embed_dim, num_heads, mlp_dim, num_queries, n_classes, img_size)
+
+        self.pred = nn.Sequential(
+            nn.Conv2d(filters_decoder[1], filters_decoder[1]//2, kernel_size=1),
+            nn.BatchNorm2d(filters_decoder[1]//2),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(filters_decoder[1]//2, n_classes, kernel_size=1),
+        )
+        self.last_activation = nn.Sigmoid()
+        self.final_fusion = ScaleAwareChainFusionNoConv()
+        # Deep supervision
+        filters = [64, 128, 256]
+        self.out_size = (224, 224)
+        self.dsv4 = UnetDsv(in_size=filters[2], out_size=64, scale_factor=self.out_size)
+        self.dsv3 = UnetDsv(in_size=filters[1], out_size=64, scale_factor=self.out_size)
+        self.dsv2 = UnetDsv(in_size=filters[0], out_size=64, scale_factor=self.out_size)
+
+
+        self.c4 = nn.Conv2d(n_classes, 256, kernel_size=1, stride=1, padding=0)
+        self.c3 = nn.Conv2d(n_classes, 128, kernel_size=1, stride=1, padding=0)
+        self.c2 = nn.Conv2d(n_classes, 64, kernel_size=1, stride=1, padding=0)
+
+    def forward(self, x):
+        # 编码器
+        e1 = self.Conv1(x)
+        e1_maxp = self.Maxpool(e1)  # 64
+        e2 = self.Conv2(e1_maxp)  # 64
+        e3 = self.Conv3(e2)  # 128
+        e4 = self.Conv4(e3)  # 256
+        e5 = self.Conv5(e4)  # 512
+
+        c2, c3, c4 = self.bridge(e2, e3, e4)
+
+        transformer_output = self.transformer_decoder(e5)  # [batch_size, n_classes, 14, 14]
+
+        dt4 = self.c4(F.interpolate(transformer_output, size=(28, 28), mode='bilinear',
+                                                     align_corners=False))
+        dt3 = self.c3(F.interpolate(transformer_output, size=(56, 56), mode='bilinear',
+                                                     align_corners=False))
+        dt2 = self.c2(F.interpolate(transformer_output, size=(112, 112), mode='bilinear',
+                                                     align_corners=False))
+        d4 = self.Up5(e5, c4) + dt4  # 256
+        d3 = self.Up4(d4, c3) + dt3  # 128
+        d2 = self.Up3(d3, c2) + dt2  # 64
+
+        dsv4 = self.dsv4(d4)
+        dsv3 = self.dsv3(d3)
+        dsv2 = self.dsv2(d2)
+
+        x_fin = self.final_fusion(dsv4, dsv3, dsv2)
+        if self.n_classes == 1:
+            out = self.last_activation(self.pred(x_fin))
+        else:
+            out = self.pred(x_fin)
+        return out
+
+class PoolingAttentionFusion(nn.Module):
+    def __init__(self):
+        super(PoolingAttentionFusion, self).__init__()
+
+    def forward(self, feat1, feat2):
+        # Spatial average pooling (global)
+        pool1 = feat1.mean(dim=(2, 3), keepdim=True)  # [B, C, 1, 1]
+        pool2 = feat2.mean(dim=(2, 3), keepdim=True)
+
+        # Stack and apply softmax over the 2 features for each channel
+        pooled = torch.cat([pool1, pool2], dim=1)     # [B, 2C, 1, 1]
+        weights = F.softmax(pooled.view(feat1.size(0), 2, -1), dim=1)  # [B, 2, C]
+        weights = weights.view(feat1.size(0), 2, feat1.size(1), 1, 1)  # [B, 2, C, 1, 1]
+
+        # Split weights
+        w1 = weights[:, 0]
+        w2 = weights[:, 1]
+
+        # Apply attention and fuse
+        fused = feat1 * w1 + feat2 * w2
+        return fused
+
+class ScaleAwareChainFusionNoConv(nn.Module):
+    def __init__(self):
+        super(ScaleAwareChainFusionNoConv, self).__init__()
+        self.fuse1 = PoolingAttentionFusion()
+        self.fuse2 = PoolingAttentionFusion()
+
+    def forward(self, dsv4, dsv3, dsv2):
+        f43 = self.fuse1(dsv4, dsv3)   # 先融合 F4 和 F3
+        f432 = self.fuse2(f43, dsv2)   # 再融合 F43 和 F2
+        return f432
